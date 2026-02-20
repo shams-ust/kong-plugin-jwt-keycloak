@@ -85,39 +85,35 @@ end
 
 local function retrieve_tokens(conf)
   local token_set = {}
+  
+  -- Check Query Params
   local args = kong.request.get_query()
-  for _, v in ipairs(conf.uri_param_names) do
+  for _, v in ipairs(conf.uri_param_names or {}) do
     local token = args[v]
-    if token then
-      if type(token) == "table" then
-        for _, t in ipairs(token) do if t ~= "" then token_set[t] = true end end
-      elseif token ~= "" then token_set[token] = true end
-    end
+    if token and token ~= "" then token_set[token] = true end
   end
 
-  local var = ngx.var
-  for _, v in ipairs(conf.cookie_names) do
-    local cookie = var["cookie_" .. v]
-    if cookie and cookie ~= "" then token_set[cookie] = true end
-  end
-
+  -- Check Headers
   local request_headers = kong.request.get_headers()
-  for _, v in ipairs(conf.header_names) do
+  for _, v in ipairs(conf.header_names or {"authorization"}) do
     local token_header = request_headers[v]
     if token_header then
       if type(token_header) == "table" then token_header = token_header[1] end
-      local iterator, iter_err = re_gmatch(token_header, "\\s*[Bb]earer\\s+(.+)")
-      if iterator then
-        local m, err = iterator()
-        if m and m[1] then token_set[m[1]] = true end
-      end
+      local m, err = ngx.re.match(token_header, "\\s*[Bb]earer\\s+(.+)", "jo")
+      if m and m[1] then token_set[m[1]] = true end
     end
   end
 
+  -- Convert set to array
   local tokens = {}
   for token, _ in pairs(token_set) do table.insert(tokens, token) end
-  return #tokens == 0 and nil or (#tokens == 1 and tokens[1] or tokens)
+
+  -- IMPORTANT FIX: Return nil if no tokens found
+  if #tokens == 0 then return nil end
+  if #tokens == 1 then return tokens[1] end
+  return tokens
 end
+
 
 local function set_consumer(consumer, credential)
   kong.client.authenticate(consumer, credential)
