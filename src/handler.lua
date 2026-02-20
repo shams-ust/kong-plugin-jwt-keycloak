@@ -84,35 +84,40 @@ local function custom_validate_token_signature(conf, jwt, second_call)
 end
 
 local function retrieve_tokens(conf)
+  kong.log.debug("[DEBUG-TOKEN-FINDER] Starting token retrieval...")
   local token_set = {}
   
-  -- Check Query Params
-  local args = kong.request.get_query()
-  for _, v in ipairs(conf.uri_param_names or {}) do
-    local token = args[v]
-    if token and token ~= "" then token_set[token] = true end
-  end
-
   -- Check Headers
   local request_headers = kong.request.get_headers()
   for _, v in ipairs(conf.header_names or {"authorization"}) do
     local token_header = request_headers[v]
     if token_header then
-      if type(token_header) == "table" then token_header = token_header[1] end
+      kong.log.debug("[DEBUG-TOKEN-FINDER] Found header: ", v)
       local m, err = ngx.re.match(token_header, "\\s*[Bb]earer\\s+(.+)", "jo")
-      if m and m[1] then token_set[m[1]] = true end
+      if m and m[1] then 
+        token_set[m[1]] = true 
+      end
     end
   end
 
-  -- Convert set to array
   local tokens = {}
   for token, _ in pairs(token_set) do table.insert(tokens, token) end
 
-  -- IMPORTANT FIX: Return nil if no tokens found
-  if #tokens == 0 then return nil end
-  if #tokens == 1 then return tokens[1] end
+  -- LOG THE FINAL RESULT
+  if #tokens == 0 then 
+    kong.log.debug("[DEBUG-TOKEN-FINDER] Result: NIL (No tokens found)")
+    return nil 
+  end
+  
+  if #tokens == 1 then 
+    kong.log.debug("[DEBUG-TOKEN-FINDER] Result: STRING (Single token found)")
+    return tokens[1] 
+  end
+  
+  kong.log.debug("[DEBUG-TOKEN-FINDER] Result: TABLE (Multiple tokens found)")
   return tokens
 end
+
 
 
 local function set_consumer(consumer, credential)
@@ -138,25 +143,26 @@ end
 
 local function do_authentication(conf)
   local token, err = retrieve_tokens(conf)
-  if err then return false, { status = 500, message = err } end
-  if not token then return false, { status = 401, message = "No token found" } end
+  
+  -- Log the type of the 'token' variable
+  kong.log.debug("[DEBUG-AUTH] Token variable type: ", type(token))
 
-  local jwt, err = jwt_decoder:new(token)
-  if err then return false, { status = 401, message = "Bad JWT" } end
-
-  if not validate_issuer(conf, jwt) then
-    return false, { status = 401, message = "Invalid issuer" }
+  if not token then
+    return false, { status = 401, message = "No token found" }
   end
 
-  local err_resp = custom_validate_token_signature(conf, jwt)
-  if err_resp then return false, err_resp end
+  -- Force conversion to string if it's a table
+  if type(token) == "table" then
+    kong.log.debug("[DEBUG-AUTH] Token was a table, selecting first element")
+    token = token[1]
+  end
 
-  -- Basic claim validation (exp, nbf)
-  local ok, errors = jwt:verify_registered_claims(conf.claims_to_verify)
-  if not ok then return false, { status = 401, message = errors } end
-
-  return true
+  kong.log.debug("[DEBUG-AUTH] Passing to decoder, length: ", #token)
+  
+  local jwt, err = jwt_decoder:new(token)
+  -- ... rest of code
 end
+
 
 function JwtKeycloakHandler:access(conf)
   local ok, err = do_authentication(conf)
