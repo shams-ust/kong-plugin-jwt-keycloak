@@ -202,6 +202,20 @@ end
 
 
 function JwtKeycloakHandler:access(conf)
+  -- 1. Check if plugin is explicitly disabled for this route/service
+  -- This allows 'enabled: false' in kong.yml to override global settings
+  if not conf or conf.enabled == false then
+    kong.log.debug("[DEBUG-AUTH] Bypassing Keycloak: Plugin is disabled for this route.")
+    return
+  end
+
+  -- 2. Skip OPTIONS requests if run_on_preflight is false
+  if not conf.run_on_preflight and kong.request.get_method() == "OPTIONS" then
+    kong.log.debug("[DEBUG-AUTH] Skipping preflight request.")
+    return
+  end
+
+  -- 3. Execute authentication logic
   local ok, err = do_authentication(conf)
   if not ok then
     return kong.response.exit(err.status, { message = err.message })
