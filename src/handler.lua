@@ -23,25 +23,34 @@ local JwtKeycloakHandler = {
 
 local function custom_helper_issuer_get_keys(well_known_endpoint)
   kong.log.debug('[DEBUG-AUTH] Getting public keys from token issuer')
+  
+  -- This calls the keycloak_keys.lua we just fixed
   local keys, err = keycloak_keys.get_issuer_keys(well_known_endpoint)
   
-  if err then return nil, err end
+  if err then 
+      kong.log.err("[DEBUG-AUTH] Key fetch failed: ", err)
+      return nil, err 
+  end
 
-  local final_keys_list = {}
-  -- Use pairs() to find the keys even if ipairs() fails
-  for k, v in pairs(keys) do
-      if v and v ~= "" then
-          table.insert(final_keys_list, v)
+  -- FIX: Remove the jwt_decoder:base64_decode loop.
+  -- The keys are already PEM strings formatted by key_conversion.lua.
+  local final_keys = {}
+  for i, key in ipairs(keys) do
+      if key and key ~= "" then
+          -- Just copy the string. DO NOT DECODE.
+          final_keys[i] = key
       end
   end
 
-  kong.log.debug('[DEBUG-AUTH] Final key count after transfer: ' .. #final_keys_list)
+  -- This log must now show '1'
+  kong.log.debug('[DEBUG-AUTH] Final decoded keys count: ' .. #final_keys)
   
   return {
-      keys = final_keys_list,
+      keys = final_keys,
       updated_at = ngx.now(),
   }
 end
+
 
 
 
