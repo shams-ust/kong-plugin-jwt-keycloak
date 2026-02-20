@@ -45,13 +45,14 @@ end
 local function der2pem(data)
     data = b64(data)
     local pem = "-----BEGIN PUBLIC KEY-----\n"
-    -- Wrap at 64 characters
+    -- This loop creates the 64-char lines Kong requires
     for i = 1, #data, 64 do
         pem = pem .. data:sub(i, i + 63) .. "\n"
     end
     pem = pem .. "-----END PUBLIC KEY-----\n"
     return pem
 end
+
 
 local function convert_kc_key(key)
     if not key or not key.n or not key.e then

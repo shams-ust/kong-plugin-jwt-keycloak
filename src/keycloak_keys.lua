@@ -83,8 +83,6 @@ local function get_issuer_keys(well_known_endpoint)
             local pem = convert.convert_kc_key(key)
             
             if pem then
-                -- Strip newlines and use table.insert to guarantee a proper Lua sequence
-                local cleaned_key = string.gsub(pem, "[\r\n]+", "")
                 table.insert(keys, cleaned_key)
                 
                 kong.log.debug("[DEBUG-HTTP] SUCCESS: Extracted signature key: ", key.kid, " at index: ", #keys)
