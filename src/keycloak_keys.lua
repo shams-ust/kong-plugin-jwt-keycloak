@@ -47,37 +47,57 @@ local function get_wellknown_endpoint(well_known_template, issuer)
 end
 
 local function get_issuer_keys(well_known_endpoint)
+    -- 1. Fetch Discovery Document
     local res, err = get_request(well_known_endpoint)
-    if err then return nil, err end
+    if err then 
+        kong.log.err("[DEBUG-HTTP] Discovery fetch failed: ", err)
+        return nil, err 
+    end
 
+    -- 2. Fetch JWKS from the uri found in discovery
     local jwks_uri = res['jwks_uri']
-    if not jwks_uri then return nil, "jwks_uri not found" end
+    if not jwks_uri then 
+        return nil, "jwks_uri not found in discovery document" 
+    end
 
     local res, err = get_request(jwks_uri)
-    if err or not res['keys'] then return nil, err or "No keys found" end
+    if err then 
+        kong.log.err("[DEBUG-HTTP] JWKS fetch failed: ", err)
+        return nil, err 
+    end
 
+    -- 3. Extract and Convert Keys
     local keys = {}
     local counter = 0
     
+    if not res['keys'] then
+        return nil, "No 'keys' array found in JWKS response"
+    end
+
     for _, key in ipairs(res['keys']) do
-        -- FIX: Only extract keys meant for Signature (sig)
-        -- Ignore keys meant for Encryption (enc) like the one in your snippet
+        -- FIX: Filter for RSA Signature keys only (ignore Encryption 'enc' keys)
         if key.kty == 'RSA' and (key.use == nil or key.use == 'sig') then
             counter = counter + 1
-            keys[counter] = string.gsub(
-                convert.convert_kc_key(key), 
-                "[\r\n]+", ""
-            )
-            kong.log.debug("[DEBUG-HTTP] Extracted signature key: ", key.kid)
+            
+            -- Convert the n/e components to PEM format
+            local pem = convert.convert_kc_key(key)
+            
+            -- Strip newlines to store as a single-line base64 string for the decoder
+            keys[counter] = string.gsub(pem, "[\r\n]+", "")
+            
+            kong.log.debug("[DEBUG-HTTP] SUCCESS: Extracted signature key: ", key.kid, " at index: ", counter)
         else
-            kong.log.debug("[DEBUG-HTTP] Skipping non-signature key: ", key.kid, " (use: ", key.use or "nil", ")")
+            kong.log.debug("[DEBUG-HTTP] SKIP: non-signature key: ", key.kid, " (use: ", key.use or "nil", ")")
         end
     end
 
+    -- Final verification before returning to handler.lua
     if counter == 0 then
-        return nil, "No RS256 signature keys found at " .. jwks_uri
+        kong.log.err("[DEBUG-HTTP] Error: No valid RSA signature keys found at ", jwks_uri)
+        return nil, "No signature keys found"
     end
 
+    kong.log.debug("[DEBUG-HTTP] Returning table to handler with count: ", #keys)
     return keys, nil
 end
 

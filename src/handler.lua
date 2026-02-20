@@ -38,22 +38,35 @@ local function custom_helper_table_to_string(tbl)
 end
 
 local function custom_helper_issuer_get_keys(well_known_endpoint)
-  kong.log.debug('Getting public keys from token issuer')
-  -- Note: Ensure keycloak_keys.lua uses the resty.http patch provided earlier
   local keys, err = keycloak_keys.get_issuer_keys(well_known_endpoint)
-  if err then return nil, err end
+  
+  if err then 
+      kong.log.err("[DEBUG-AUTH] keycloak_keys returned error: ", err)
+      return nil, err 
+  end
+
+  if not keys or #keys == 0 then
+      kong.log.err("[DEBUG-AUTH] keycloak_keys returned an empty list or nil")
+      return nil, "No keys found"
+  end
 
   local decoded_keys = {}
   for i, key in ipairs(keys) do
-      decoded_keys[i] = jwt_decoder:base64_decode(key)
+      -- Important: verify the key string isn't empty
+      if key and key ~= "" then
+        decoded_keys[i] = jwt_decoder:base64_decode(key)
+      end
   end
 
-  kong.log.debug('Number of keys retrieved: ' .. #decoded_keys)
+  -- Use # to get the count
+  kong.log.debug('[DEBUG-AUTH] Final decoded keys count: ' .. #decoded_keys)
+  
   return {
       keys = decoded_keys,
       updated_at = ngx.now(),
   }
 end
+
 
 local function custom_validate_token_signature(conf, jwt, second_call)
   local issuer_cache_key = 'issuer_keys_' .. jwt.claims.iss
