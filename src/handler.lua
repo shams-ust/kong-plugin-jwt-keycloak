@@ -21,21 +21,32 @@ local JwtKeycloakHandler = {
   PRIORITY = priority,
 }
 
-local function custom_helper_table_to_string(tbl)
-  local result = ""
-  for k, v in pairs(tbl) do
-      if type(k) == "string" then result = result.."[\""..k.."\"]".."=" end
-      if type(v) == "table" then
-          result = result..custom_helper_table_to_string(v)
-      elseif type(v) == "boolean" then
-          result = result..tostring(v)
-      else
-          result = result.."\""..v.."\""
-      end
-      result = result..","
+local function custom_helper_issuer_get_keys(well_known_endpoint)
+  kong.log.debug('Getting public keys from token issuer')
+  local keys, err = keycloak_keys.get_issuer_keys(well_known_endpoint)
+  
+  if err then 
+      kong.log.err("[DEBUG-AUTH] keycloak_keys fetch failed: ", err)
+      return nil, err 
   end
-  return result ~= "" and result:sub(1, result:len()-1) or result
+
+  -- The keys table coming back contains PEM strings. 
+  -- Do NOT call base64_decode here; just pass them through.
+  local final_keys = {}
+  for i, key in ipairs(keys) do
+      if key and key ~= "" then
+          final_keys[i] = key
+      end
+  end
+
+  kong.log.debug('[DEBUG-AUTH] Final decoded keys count: ' .. #final_keys)
+  
+  return {
+      keys = final_keys,
+      updated_at = ngx.now(),
+  }
 end
+
 
 local function custom_helper_issuer_get_keys(well_known_endpoint)
   local keys, err = keycloak_keys.get_issuer_keys(well_known_endpoint)
