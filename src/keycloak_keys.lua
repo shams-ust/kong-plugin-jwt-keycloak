@@ -50,49 +50,54 @@ local function get_issuer_keys(well_known_endpoint)
     -- 1. Fetch Discovery Document
     local res, err = get_request(well_known_endpoint)
     if err then 
-        kong.log.err("[DEBUG-HTTP] Discovery fetch failed: ", err)
+        kong.log.err("[DEBUG-HTTP] Discovery fetch failed: ", tostring(err))
         return nil, err 
     end
 
     -- 2. Fetch JWKS from the uri found in discovery
     local jwks_uri = res['jwks_uri']
     if not jwks_uri then 
+        kong.log.err("[DEBUG-HTTP] jwks_uri not found in discovery document")
         return nil, "jwks_uri not found in discovery document" 
     end
 
     local res, err = get_request(jwks_uri)
     if err then 
-        kong.log.err("[DEBUG-HTTP] JWKS fetch failed: ", err)
+        kong.log.err("[DEBUG-HTTP] JWKS fetch failed: ", tostring(err))
         return nil, err 
     end
 
     -- 3. Extract and Convert Keys
     local keys = {}
-    local counter = 0
     
-    if not res['keys'] then
+    if not res['keys'] or type(res['keys']) ~= "table" then
+        kong.log.err("[DEBUG-HTTP] No 'keys' array found in JWKS response")
         return nil, "No 'keys' array found in JWKS response"
     end
 
     for _, key in ipairs(res['keys']) do
         -- FIX: Filter for RSA Signature keys only (ignore Encryption 'enc' keys)
         if key.kty == 'RSA' and (key.use == nil or key.use == 'sig') then
-            counter = counter + 1
             
             -- Convert the n/e components to PEM format
             local pem = convert.convert_kc_key(key)
             
-            -- Strip newlines to store as a single-line base64 string for the decoder
-            keys[counter] = string.gsub(pem, "[\r\n]+", "")
-            
-            kong.log.debug("[DEBUG-HTTP] SUCCESS: Extracted signature key: ", key.kid, " at index: ", counter)
+            if pem then
+                -- Strip newlines and use table.insert to guarantee a proper Lua sequence
+                local cleaned_key = string.gsub(pem, "[\r\n]+", "")
+                table.insert(keys, cleaned_key)
+                
+                kong.log.debug("[DEBUG-HTTP] SUCCESS: Extracted signature key: ", key.kid, " at index: ", #keys)
+            else
+                kong.log.err("[DEBUG-HTTP] Failed to convert key: ", key.kid)
+            end
         else
             kong.log.debug("[DEBUG-HTTP] SKIP: non-signature key: ", key.kid, " (use: ", key.use or "nil", ")")
         end
     end
 
-    -- Final verification before returning to handler.lua
-    if counter == 0 then
+    -- 4. Final verification before returning to handler.lua
+    if #keys == 0 then
         kong.log.err("[DEBUG-HTTP] Error: No valid RSA signature keys found at ", jwks_uri)
         return nil, "No signature keys found"
     end
@@ -100,6 +105,7 @@ local function get_issuer_keys(well_known_endpoint)
     kong.log.debug("[DEBUG-HTTP] Returning table to handler with count: ", #keys)
     return keys, nil
 end
+
 
 
 return {
