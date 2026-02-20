@@ -76,14 +76,16 @@ local function get_issuer_keys(well_known_endpoint)
     end
 
     for _, key in ipairs(res['keys']) do
-        -- FIX: Filter for RSA Signature keys only (ignore Encryption 'enc' keys)
+        -- Filter for RSA Signature keys only (ignore Encryption 'enc' keys)
         if key.kty == 'RSA' and (key.use == nil or key.use == 'sig') then
             
             -- Convert the n/e components to PEM format
             local pem = convert.convert_kc_key(key)
             
             if pem then
-                table.insert(keys, cleaned_key)
+                -- FIX: Use 'pem' (the variable defined above) instead of 'cleaned_key'
+                -- DO NOT strip newlines; Kong 3.9 requires them in the PEM format.
+                table.insert(keys, pem)
                 
                 kong.log.debug("[DEBUG-HTTP] SUCCESS: Extracted signature key: ", key.kid, " at index: ", #keys)
             else
@@ -103,6 +105,7 @@ local function get_issuer_keys(well_known_endpoint)
     kong.log.debug("[DEBUG-HTTP] Returning table to handler with count: ", #keys)
     return keys, nil
 end
+
 
 
 
