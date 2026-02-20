@@ -17,6 +17,11 @@ local function get_request(url_str)
         },
     })
 
+    if res then
+        kong.log.debug("[DEBUG-HTTP] URL: ", url_str, " Status: ", res.status)
+        kong.log.debug("[DEBUG-HTTP] Body Snippet: ", string.sub(res.body or "empty", 1, 100))
+    end
+
     if not res then
         return nil, "Failed calling url " .. url_str .. ": " .. (err or "unknown error")
     end
