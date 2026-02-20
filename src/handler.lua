@@ -53,39 +53,6 @@ end
 
 
 
-
-
-local function custom_helper_issuer_get_keys(well_known_endpoint)
-  local keys, err = keycloak_keys.get_issuer_keys(well_known_endpoint)
-  
-  if err then 
-      kong.log.err("[DEBUG-AUTH] keycloak_keys returned error: ", err)
-      return nil, err 
-  end
-
-  if not keys or #keys == 0 then
-      kong.log.err("[DEBUG-AUTH] keycloak_keys returned an empty list or nil")
-      return nil, "No keys found"
-  end
-
-  local decoded_keys = {}
-  for i, key in ipairs(keys) do
-      -- Important: verify the key string isn't empty
-      if key and key ~= "" then
-        decoded_keys[i] = jwt_decoder:base64_decode(key)
-      end
-  end
-
-  -- Use # to get the count
-  kong.log.debug('[DEBUG-AUTH] Final decoded keys count: ' .. #decoded_keys)
-  
-  return {
-      keys = decoded_keys,
-      updated_at = ngx.now(),
-  }
-end
-
-
 local function custom_validate_token_signature(conf, jwt, second_call)
   local issuer_cache_key = 'issuer_keys_' .. jwt.claims.iss
   local well_known_endpoint = keycloak_keys.get_wellknown_endpoint(conf.well_known_template, jwt.claims.iss)
