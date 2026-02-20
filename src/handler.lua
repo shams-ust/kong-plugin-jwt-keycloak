@@ -142,26 +142,68 @@ local function set_consumer(consumer, credential)
 end
 
 local function do_authentication(conf)
+  -- 1. Retrieve the token(s)
   local token, err = retrieve_tokens(conf)
   
-  -- Log the type of the 'token' variable
+  -- Log the type of the 'token' variable for visibility
   kong.log.debug("[DEBUG-AUTH] Token variable type: ", type(token))
 
+  if err then
+    kong.log.err("[DEBUG-AUTH] Error during token retrieval: ", tostring(err))
+    return false, { status = 500, message = err }
+  end
+
   if not token then
+    kong.log.debug("[DEBUG-AUTH] No token found in request")
     return false, { status = 401, message = "No token found" }
   end
 
-  -- Force conversion to string if it's a table
+  -- 2. Handle cases where multiple tokens might be returned as a table
   if type(token) == "table" then
-    kong.log.debug("[DEBUG-AUTH] Token was a table, selecting first element")
+    kong.log.debug("[DEBUG-AUTH] Multiple tokens found, selecting first element")
     token = token[1]
   end
 
+  -- 3. Decode the JWT
   kong.log.debug("[DEBUG-AUTH] Passing to decoder, length: ", #token)
   
   local jwt, err = jwt_decoder:new(token)
-  -- ... rest of code
+  
+  -- CRITICAL FIX: Only enter this block if 'err' actually exists
+  if err then
+    kong.log.err("[DEBUG-AUTH] Decoder failed: ", tostring(err))
+    return false, { status = 401, message = "Bad JWT: " .. tostring(err) }
+  end
+
+  -- 4. Proceed to Claims and Signature Validation
+  if not jwt.claims or not jwt.claims.iss then
+    return false, { status = 401, message = "Invalid token: missing issuer claim" }
+  end
+
+  kong.log.debug("[DEBUG-AUTH] JWT Decoded successfully. Claims iss: ", jwt.claims.iss)
+
+  -- Validate the issuer against allowed list
+  if not validate_issuer(conf.allowed_iss, jwt.claims) then
+    return false, { status = 401, message = "Token issuer not allowed" }
+  end
+
+  -- Perform the Keycloak Signature validation (calls keycloak_keys.lua)
+  local err_resp = custom_validate_token_signature(conf, jwt)
+  if err_resp then 
+    kong.log.err("[DEBUG-AUTH] Signature validation failed: ", err_resp.message)
+    return false, err_resp 
+  end
+
+  -- 5. Final check for registered claims (exp, nbf, etc)
+  local ok_claims, errors = jwt:verify_registered_claims(conf.claims_to_verify)
+  if not ok_claims then
+    return false, { status = 401, message = errors }
+  end
+
+  kong.log.debug("[DEBUG-AUTH] Authentication successful")
+  return true
 end
+
 
 
 function JwtKeycloakHandler:access(conf)
