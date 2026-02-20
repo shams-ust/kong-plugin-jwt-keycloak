@@ -46,38 +46,41 @@ local function get_wellknown_endpoint(well_known_template, issuer)
     return string.format(well_known_template, issuer)
 end
 
-local function get_issuer_keys(well_known_endpoint, issuer)
-    -- 1. Fetch Discovery Document
+local function get_issuer_keys(well_known_endpoint)
     local res, err = get_request(well_known_endpoint)
-    if err then
-        return nil, err
-    end
+    if err then return nil, err end
 
-    -- 2. Fetch JWKS from the uri found in discovery
     local jwks_uri = res['jwks_uri']
-    if not jwks_uri then
-        return nil, "jwks_uri not found in discovery document"
-    end
+    if not jwks_uri then return nil, "jwks_uri not found" end
 
     local res, err = get_request(jwks_uri)
-    if err then
-        return nil, err
-    end
+    if err or not res['keys'] then return nil, err or "No keys found" end
 
-    -- 3. Convert keys
     local keys = {}
-    if not res['keys'] then
-        return nil, "No keys found in JWKS response"
+    local counter = 0
+    
+    for _, key in ipairs(res['keys']) do
+        -- FIX: Only extract keys meant for Signature (sig)
+        -- Ignore keys meant for Encryption (enc) like the one in your snippet
+        if key.kty == 'RSA' and (key.use == nil or key.use == 'sig') then
+            counter = counter + 1
+            keys[counter] = string.gsub(
+                convert.convert_kc_key(key), 
+                "[\r\n]+", ""
+            )
+            kong.log.debug("[DEBUG-HTTP] Extracted signature key: ", key.kid)
+        else
+            kong.log.debug("[DEBUG-HTTP] Skipping non-signature key: ", key.kid, " (use: ", key.use or "nil", ")")
+        end
     end
 
-    for i, key in ipairs(res['keys']) do
-        keys[i] = string.gsub(
-            convert.convert_kc_key(key), 
-            "[\r\n]+", ""
-        )
+    if counter == 0 then
+        return nil, "No RS256 signature keys found at " .. jwks_uri
     end
+
     return keys, nil
 end
+
 
 return {
     get_request = get_request,
