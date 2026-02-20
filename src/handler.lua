@@ -202,6 +202,7 @@ end
 
 
 function JwtKeycloakHandler:access(conf)
+  kong.log.debug("[DEBUG-AUTH] JwtKeycloakHandler access: conf = ", tostring(conf))
   -- 1. Check if plugin is explicitly disabled for this route/service
   -- This allows 'enabled: false' in kong.yml to override global settings
   if not conf or conf.enabled == false then
