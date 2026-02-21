@@ -4,7 +4,7 @@ FROM kong:latest as builder
 USER root
 
 # Install only what is needed to compile the rock
-RUN apt-get update && apt-get install -y git build-essential unzip
+RUN apt-get update && apt-get install -y git build-essential unzip zip && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp/jwt-keycloak
 
