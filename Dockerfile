@@ -1,32 +1,31 @@
-## Build plugin
-ARG KONG_VERSION
-FROM docker.io/kong:${KONG_VERSION} as builder
+# STAGE 1: The Builder
+FROM kong:latest as builder
 
-# Root needed to install dependencies
 USER root
 
-# Starting from kong 3.2 they move from alpine to debian .. so conditional install logic is needed
-ARG DISTO_ADDONS="zip"
-RUN if [ -x "$(command -v apk)" ]; then apk add --no-cache $DISTO_ADDONS; \
-    elif [ -x "$(command -v apt-get)" ]; then apt-get update && apt-get install $DISTO_ADDONS; \
-    fi
-WORKDIR /tmp
+# Install only what is needed to compile the rock
+RUN apt-get update && apt-get install -y git build-essential unzip
 
-COPY ./*.rockspec /tmp
-COPY ./LICENSE /tmp/LICENSE
-COPY ./src /tmp/src
-ARG PLUGIN_VERSION
-RUN luarocks make && luarocks pack kong-plugin-jwt-keycloak ${PLUGIN_VERSION}
+WORKDIR /tmp/jwt-keycloak
 
-## Create Image
-FROM docker.io/kong:${KONG_VERSION}
+# 1. Clone your FIXED repository
+RUN git clone --depth 1 --branch master https://github.com/shams-ust/kong-plugin-jwt-keycloak.git .
+
+# 2. Build the portable .rock file (No 'sed' needed since code is already correct!)
+RUN luarocks make *.rockspec && luarocks pack kong-plugin-jwt-keycloak
+
+# STAGE 2: The Final Production Image
+FROM kong:latest
 
 ENV KONG_PLUGINS="bundled,jwt-keycloak"
 
-COPY --from=builder /tmp/*.rock /tmp/
-
-# Root needed for installing plugin
 USER root
 
-ARG PLUGIN_VERSION
-RUN luarocks install /tmp/kong-plugin-jwt-keycloak-${PLUGIN_VERSION}.all.rock
+# Copy only the finished plugin from the builder
+COPY --from=builder /tmp/jwt-keycloak/*.rock /tmp/
+
+# Install and cleanup
+RUN luarocks install /tmp/*.rock && rm /tmp/*.rock
+
+# Security: Run as kong user
+USER kong
