@@ -199,20 +199,15 @@ local function do_authentication(conf)
   return true
 end
 
-
-
-
 function JwtKeycloakHandler:access(conf)
-  kong.log.debug("[DEBUG-AUTH] Plugin Config: ", cjson.encode(conf))
  -- 1. Check if the plugin is explicitly disabled on the current route
   local curr_route = kong.router.get_route()
-  kong.log.inspect("[DEBUG-ROUTE] Full Route: ", curr_route) 
   
   local route = kong.router.get_route()
-  kong.log.inspect("[DEBUG-ROUTE] route: ", route) 
   if route and route.tags then
       for _, tag in ipairs(route.tags) do
           if tag == "skip-jwt" then
+              kong.log.debug("[DEBUG-AUTH] jwt-keycloak plugin disabled for this route due to 'skip-jwt' tag.")
               return -- Exit the plugin early for this request
           end
       end
