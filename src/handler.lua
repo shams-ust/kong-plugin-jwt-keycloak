@@ -2,6 +2,7 @@ local constants = require "kong.constants"
 local jwt_decoder = require "kong.plugins.jwt.jwt_parser"
 local kong_meta = require "kong.meta"
 local keycloak_keys = require("kong.plugins.jwt-keycloak.keycloak_keys")
+local cjson = require "cjson"
 
 -- Validators
 local validate_issuer = require("kong.plugins.jwt-keycloak.validators.issuers").validate_issuer
