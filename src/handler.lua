@@ -207,21 +207,15 @@ function JwtKeycloakHandler:access(conf)
  -- 1. Check if the plugin is explicitly disabled on the current route
   local curr_route = kong.router.get_route()
   kong.log.inspect("[DEBUG-ROUTE] Full Route: ", curr_route) 
-  if curr_route then
-    -- We look for a route-level plugin configuration for 'jwt-keycloak'
-    -- If it exists and is 'enabled = false', we skip the global logic.
-    local service = kong.router.get_service()
-    local plugins = kong.db.plugins:select_all({
-      route_id = curr_route.id,
-      name = "jwt-keycloak"
-    })
-
-    for _, plugin in ipairs(plugins) do
-      if plugin.enabled == false then
-        kong.log.debug("[JWT-KEYCLOAK] Plugin is disabled for this route, skipping...")
-        return 
+  
+  local route = kong.router.get_route()
+  kong.log.inspect("[DEBUG-ROUTE] route: ", route) 
+  if route and route.tags then
+      for _, tag in ipairs(route.tags) do
+          if tag == "skip-jwt" then
+              return -- Exit the plugin early for this request
+          end
       end
-    end
   end
 
   -- 2. Skip OPTIONS requests if run_on_preflight is false
